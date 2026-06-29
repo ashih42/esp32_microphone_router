@@ -1,0 +1,57 @@
+[package]
+name = "esp32_microphone_router"
+version = "0.1.0"
+authors = ["Andy Shih"]
+# edition = "2021"
+# resolver = "2"
+# rust-version = "1.82"
+edition = "2024"
+
+[[bin]]
+name = "whats_my_mac"
+path = "./src/bin/whats_my_mac.rs"
+harness = false
+
+[[bin]]
+name = "sender_jimmy"
+path = "./src/bin/sender_jimmy.rs"
+harness = false
+
+[[bin]]
+name = "receiver"
+path = "./src/bin/receiver.rs"
+harness = false
+
+[[bin]]
+name = "doge"
+path = "./src/bin/tmp/doge.rs"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[patch.crates-io]
+esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git" }
+esp-idf-hal = { git = "https://github.com/esp-rs/esp-idf-hal.git" }
+esp-idf-svc = { git = "https://github.com/esp-rs/esp-idf-svc.git" }
+
+[dependencies]
+log = "0.4"
+esp-idf-svc = { version = "0.52.1", features = ["critical-section", "embassy-time-driver", "embassy-sync"] }
+esp-idf-hal = "0.46.2"
+esp-idf-sys = "0.37.2"
+# Remove `generic-queue-8` if you plan to use `embassy-time` WITH `embassy-executor`
+embassy-time = { version = "0.5", features = ["generic-queue-8"] }
+anyhow = "1.0.103"
+
+timed-debouncer = "0.1.0"
+edge-executor = "0.4.1"
+futures = "0.3.32"
+
+[build-dependencies]
+dotenvy = "0.15.7"
+embuild = "0.33"

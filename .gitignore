@@ -1,0 +1,9 @@
+/.vscode
+/.embuild
+/target
+/Cargo.lock
+.DS_Store
+
+/src/bin/tmp
+/_images
+.env
