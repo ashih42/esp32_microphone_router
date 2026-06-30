@@ -16,9 +16,8 @@ use esp32_microphone_router::{
     config::RECEIVER_MAC,
     esp_now,
     models::{
-        ESP_NOW_MESSAGE_SIZE, EspNowMessage, EspNowMessageHeader, EspNowMessagePayload,
-        MicrophoneId, ResetMicrophonePayload, RoutableMicrophoneSenderState,
-        SimpleMicrophoneSenderState, ToMessage,
+        EspNowMessage, MicrophoneType, RoutableMicrophoneSenderState, SimpleMicrophoneSenderState,
+        ToMessage,
     },
     power,
 };
@@ -138,23 +137,13 @@ fn main() {
     log::info!("SENDER JIMMY BEGIN");
 
     // Send a message to reset the microphone for Jimmy.
-    send_message(EspNowMessage {
-        header: EspNowMessageHeader::ResetMicrophone,
-        payload: EspNowMessagePayload {
-            reset_microphone: ResetMicrophonePayload {
-                microphone_id: MicrophoneId::RoutableMicrophone,
-            },
-        },
+    send_message(EspNowMessage::ResetMicrophone {
+        microphone_type: MicrophoneType::RoutableMicrophone,
     });
 
     // Send a message to reset the microphone for Mike.
-    send_message(EspNowMessage {
-        header: EspNowMessageHeader::ResetMicrophone,
-        payload: EspNowMessagePayload {
-            reset_microphone: ResetMicrophonePayload {
-                microphone_id: MicrophoneId::SimpleMicrophone,
-            },
-        },
+    send_message(EspNowMessage::ResetMicrophone {
+        microphone_type: MicrophoneType::SimpleMicrophone,
     });
 
     // 3. Initialize a single-threaded async executor.
@@ -179,24 +168,25 @@ async fn monitor_button<'a>(mut button: Button<'a>) {
 }
 
 /// Send a message over ESP-NOW.
-/// Note: We don't bother setting up a callback function to check if receiver sent back an ACK packet.
+/// Note: I don't bother setting up a callback function to check if receiver sent back an ACK packet.
 fn send_message(message: EspNowMessage) {
     log::info!("send_message: {:?}", message);
 
-    let status = unsafe {
-        esp_now_send(
-            RECEIVER_MAC.as_ptr(),
-            &raw const message as *const u8,
-            ESP_NOW_MESSAGE_SIZE,
-        )
-    };
+    // ESP-NOW max payload size is 250 bytes.
+    let mut buffer = [0_u8; 250];
 
-    if status == ESP_OK {
-        log::info!(
-            "Successfully sent {} bytes of message",
-            ESP_NOW_MESSAGE_SIZE
-        );
-    } else {
-        log::error!("Error sending message: {:?}", status);
+    match postcard::to_slice(&message, &mut buffer) {
+        Err(err) => {
+            log::error!("postcard::to_slice failed: {}", err);
+        }
+        Ok(data) => {
+            let status = unsafe { esp_now_send(RECEIVER_MAC.as_ptr(), data.as_ptr(), data.len()) };
+
+            if status == ESP_OK {
+                log::info!("Successfully sent {} bytes of message", data.len());
+            } else {
+                log::error!("esp_now_send() failed: {:?}", status);
+            }
+        }
     }
 }

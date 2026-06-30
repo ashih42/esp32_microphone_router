@@ -1,3 +1,4 @@
+use core::slice;
 use esp_idf_hal::{
     gpio::{Output, PinDriver},
     peripherals::Peripherals,
@@ -8,20 +9,16 @@ use esp_idf_svc::{
     wifi::{BlockingWifi, ClientConfiguration, Configuration, EspWifi},
 };
 use esp_idf_sys::{ESP_OK, esp_now_recv_info_t, esp_now_register_recv_cb};
-use std::{
-    ptr,
-    sync::{
-        OnceLock,
-        mpsc::{self, Sender},
-    },
+use std::sync::{
+    OnceLock,
+    mpsc::{self, Sender},
 };
 
 use esp32_microphone_router::{
     esp_now,
     models::{
-        ESP_NOW_MESSAGE_SIZE, EspNowMessage, EspNowMessageHeader, MicrophoneId, MicrophoneRoute,
-        ReceiverState, ResetMicrophonePayload, UpdateRoutableMicrophonePayload,
-        UpdateSimpleMicrophonePayload,
+        EspNowMessage, MicrophoneRoute, MicrophoneType, ReceiverState, RoutableMicrophone,
+        SimpleMicrophone,
     },
     power,
 };
@@ -107,44 +104,44 @@ fn main() {
 fn process_message(state: &mut ReceiverState, message: EspNowMessage) {
     log::info!("process_message: {:?}", message);
 
-    match message.header {
-        EspNowMessageHeader::ResetMicrophone => {
-            process_reset_microphone(state, unsafe { message.payload.reset_microphone })
+    match message {
+        EspNowMessage::ResetMicrophone { microphone_type } => {
+            reset_microphone(state, microphone_type)
         }
-        EspNowMessageHeader::UpdateRoutableMicrophone => {
-            process_update_routable_microphone(state, unsafe {
-                message.payload.update_routable_microphone
-            })
-        }
-        EspNowMessageHeader::UpdateSimpleMicrophone => {
-            process_update_simple_microphone(state, unsafe {
-                message.payload.update_simple_microphone
-            })
+        EspNowMessage::UpdateRoutableMicrophone {
+            message_id,
+            route,
+            active,
+        } => update_routable_microphone(&mut state.routable_microphone, message_id, route, active),
+        EspNowMessage::UpdateSimpleMicrophone { message_id, active } => {
+            update_simple_microphone(&mut state.simple_microphone, message_id, active)
         }
     };
 }
 
 /// Reset the specific microphone's `last_message_id`.
-fn process_reset_microphone(state: &mut ReceiverState, payload: ResetMicrophonePayload) {
-    match payload.microphone_id {
-        MicrophoneId::RoutableMicrophone => {
+fn reset_microphone(state: &mut ReceiverState, microphone_type: MicrophoneType) {
+    match microphone_type {
+        MicrophoneType::RoutableMicrophone => {
             state.routable_microphone.last_message_id = 0;
         }
-        MicrophoneId::SimpleMicrophone => {
+        MicrophoneType::SimpleMicrophone => {
             state.simple_microphone.last_message_id = 0;
         }
     }
 }
 
 /// If `message_id` is valid, update the state of the routable microphone.
-fn process_update_routable_microphone(
-    state: &mut ReceiverState,
-    payload: UpdateRoutableMicrophonePayload,
+fn update_routable_microphone(
+    microphone: &mut RoutableMicrophone,
+    message_id: u16,
+    route: MicrophoneRoute,
+    active: bool,
 ) {
-    if payload.message_id > state.routable_microphone.last_message_id {
-        state.routable_microphone.route = payload.route;
-        state.routable_microphone.active = payload.active;
-        state.routable_microphone.last_message_id = payload.message_id;
+    if message_id > microphone.last_message_id {
+        microphone.route = route;
+        microphone.active = active;
+        microphone.last_message_id = message_id;
         log::info!("Accepted this message.");
     } else {
         log::warn!("Rejected this old message.");
@@ -152,13 +149,10 @@ fn process_update_routable_microphone(
 }
 
 /// If `message_id` is valid, update the state of the simple microphone.
-fn process_update_simple_microphone(
-    state: &mut ReceiverState,
-    payload: UpdateSimpleMicrophonePayload,
-) {
-    if payload.message_id > state.simple_microphone.last_message_id {
-        state.simple_microphone.active = payload.active;
-        state.simple_microphone.last_message_id = payload.message_id;
+fn update_simple_microphone(microphone: &mut SimpleMicrophone, message_id: u16, active: bool) {
+    if message_id > microphone.last_message_id {
+        microphone.active = active;
+        microphone.last_message_id = message_id;
         log::info!("Accepted this message.");
     } else {
         log::warn!("Rejected this old message.");
@@ -204,33 +198,34 @@ fn flush_state<'a>(
 // ESP-NOW Receive Callback (Runs inside underlying WiFi Task Context)
 // ============================================================================
 
-/// Callback triggered automatically whenever an ESP-NOW packet arrives.
-/// This function converts data into a Message and sends it back to main for processing.
-/// With encryption checked by hardware, we can be sure this message really came from our sender.
+/// This callback is triggered whenever an ESP-NOW packet arrives, called by a wifi thread.
+/// This function converts packet data into a EspNowMessage and sends it back to main thread for processing.
+/// Note: With encryption checked by hardware, we can be confident this is getting a valid packet from our sender most of the time.
 extern "C" fn on_data_recv_callback(
     _info: *const esp_now_recv_info_t,
     data: *const u8,
     data_len: i32,
 ) {
-    let data_len = data_len as usize;
-
-    if data_len != ESP_NOW_MESSAGE_SIZE {
-        log::error!(
-            "Unexpected payload size! Expected {} bytes, received {} bytes.",
-            ESP_NOW_MESSAGE_SIZE,
-            data_len
-        );
+    if data.is_null() || data_len <= 0 {
+        log::error!("on_data_recv_callback() received invalid data.");
         return;
     }
 
-    let message = unsafe { ptr::read_unaligned(data as *const EspNowMessage) };
+    let raw_slice = unsafe { slice::from_raw_parts(data, data_len as usize) };
 
-    log::info!("ESP-NOW Received message: {:?}", message);
+    match postcard::from_bytes::<EspNowMessage>(raw_slice) {
+        Err(err) => {
+            log::error!("postcard::from_bytes() failed: {}", err);
+        }
+        Ok(message) => {
+            log::info!("ESP-NOW Received message: {:?}", message);
 
-    #[allow(clippy::collapsible_if)]
-    if let Some(tx) = TX_CHANNEL.get() {
-        if let Err(err) = tx.send(message) {
-            log::error!("Failed to forward value to main loop channel: {:?}", err);
+            #[allow(clippy::collapsible_if)]
+            if let Some(tx) = TX_CHANNEL.get() {
+                if let Err(err) = tx.send(message) {
+                    log::error!("Failed to forward value to main loop channel: {:?}", err);
+                }
+            }
         }
     }
 }

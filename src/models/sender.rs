@@ -1,8 +1,6 @@
 use std::sync::atomic::{AtomicU16, Ordering};
 
 use crate::models::{
-    EspNowMessageHeader, EspNowMessagePayload, UpdateRoutableMicrophonePayload,
-    UpdateSimpleMicrophonePayload,
     esp_now_message::{EspNowMessage, ToMessage},
     microphone::MicrophoneRoute,
 };
@@ -18,57 +16,50 @@ impl ToMessage for RoutableMicrophoneSenderState {
     fn to_message(&self) -> EspNowMessage {
         let message_id = generate_message_id();
 
-        let update_routable_microphone = match (
+        match (
             self.to_audience_latch_is_pressed,
             self.to_band_pedal_is_pressed,
             self.to_audience_pushbutton_is_pressed,
         ) {
-            (false, false, false) => UpdateRoutableMicrophonePayload {
+            (false, false, false) => EspNowMessage::UpdateRoutableMicrophone {
                 active: false,
                 route: MicrophoneRoute::default(),
                 message_id,
             },
-            (false, false, true) => UpdateRoutableMicrophonePayload {
+            (false, false, true) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToAudience,
                 message_id,
             },
-            (false, true, false) => UpdateRoutableMicrophonePayload {
+            (false, true, false) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToBand,
                 message_id,
             },
-            (false, true, true) => UpdateRoutableMicrophonePayload {
+            (false, true, true) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToBand,
                 message_id,
             },
-            (true, false, false) => UpdateRoutableMicrophonePayload {
+            (true, false, false) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToAudience,
                 message_id,
             },
-            (true, false, true) => UpdateRoutableMicrophonePayload {
+            (true, false, true) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToAudience,
                 message_id,
             },
-            (true, true, false) => UpdateRoutableMicrophonePayload {
+            (true, true, false) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToBand,
                 message_id,
             },
-            (true, true, true) => UpdateRoutableMicrophonePayload {
+            (true, true, true) => EspNowMessage::UpdateRoutableMicrophone {
                 active: true,
                 route: MicrophoneRoute::ToBand,
                 message_id,
-            },
-        };
-
-        EspNowMessage {
-            header: EspNowMessageHeader::UpdateRoutableMicrophone,
-            payload: EspNowMessagePayload {
-                update_routable_microphone,
             },
         }
     }
@@ -81,14 +72,9 @@ pub struct SimpleMicrophoneSenderState {
 
 impl ToMessage for SimpleMicrophoneSenderState {
     fn to_message(&self) -> EspNowMessage {
-        EspNowMessage {
-            header: EspNowMessageHeader::UpdateSimpleMicrophone,
-            payload: EspNowMessagePayload {
-                update_simple_microphone: UpdateSimpleMicrophonePayload {
-                    active: self.to_audience_pushbutton_is_pressed,
-                    message_id: generate_message_id(),
-                },
-            },
+        EspNowMessage::UpdateSimpleMicrophone {
+            active: self.to_audience_pushbutton_is_pressed,
+            message_id: generate_message_id(),
         }
     }
 }

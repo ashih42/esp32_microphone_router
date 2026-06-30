@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 #[derive(Default, Debug)]
 pub struct RoutableMicrophone {
     pub route: MicrophoneRoute,
@@ -12,7 +14,7 @@ pub struct SimpleMicrophone {
 }
 
 #[repr(u8)]
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Deserialize, Serialize)]
 pub enum MicrophoneRoute {
     #[default]
     ToAudience,

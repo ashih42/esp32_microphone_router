@@ -51,6 +51,8 @@ anyhow = "1.0.103"
 timed-debouncer = "0.1.0"
 edge-executor = "0.4.1"
 futures = "0.3.32"
+postcard = "1.1.3"
+serde = "1.0.228"
 
 [build-dependencies]
 dotenvy = "0.15.7"
