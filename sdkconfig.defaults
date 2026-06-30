@@ -10,3 +10,14 @@ CONFIG_FREERTOS_IDLE_TASK_STACKSIZE=4096
 # that allocate large stack variables; or better yet - use 
 # `std::thread::Builder::new().stack_size(XXX)` for spawning
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=4096
+
+# Enable power management.
+CONFIG_PM_ENABLE=y
+
+# Set CPU speed to 80 MHz (instead of default 240 MHz).
+# It looks like this doesn't work, as I still see in logging: "cpu_start: cpu freq: 160000000 Hz"
+# Oh well, I will set CPU speed programatically in main() anyway.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=80
+
+# Disable tickless idle, since we don't want ESP32 to enter light or deep sleep.
+CONFIG_FREERTOS_USE_TICKLESS_IDLE=n

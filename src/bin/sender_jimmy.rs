@@ -20,11 +20,14 @@ use esp32_microphone_router::{
         MicrophoneId, ResetMicrophonePayload, RoutableMicrophoneSenderState,
         SimpleMicrophoneSenderState, ToMessage,
     },
+    power,
 };
 
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
+
+    power::limit_cpu_speed();
 
     // --------------------------------------------------------------------------------------------
     // Initialize Wifi.

@@ -23,6 +23,7 @@ use esp32_microphone_router::{
         ReceiverState, ResetMicrophonePayload, UpdateRoutableMicrophonePayload,
         UpdateSimpleMicrophonePayload,
     },
+    power,
 };
 
 static TX_CHANNEL: OnceLock<Mutex<Sender<EspNowMessage>>> = OnceLock::new();
@@ -30,6 +31,8 @@ static TX_CHANNEL: OnceLock<Mutex<Sender<EspNowMessage>>> = OnceLock::new();
 fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
+
+    power::limit_cpu_speed();
 
     // --------------------------------------------------------------------------------------------
     // Initialize Wifi.
