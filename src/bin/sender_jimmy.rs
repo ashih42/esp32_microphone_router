@@ -52,8 +52,6 @@ fn main() {
 
     // --------------------------------------------------------------------------------------------
 
-    // --------------------------------------------------------------------------------------------
-
     // Set up input devices with callbacks.
     let state = Rc::new(RefCell::new(RoutableMicrophoneSenderState::default()));
 
@@ -81,7 +79,7 @@ fn main() {
             // 3. Send message.
             send_message(_state.to_message());
         }),
-        Box::new(move || {
+        Box::new(|| {
             log::info!("jimmy_latch RELEASE (do nothing)");
         }),
     );
@@ -116,6 +114,7 @@ fn main() {
         }),
     );
 
+    // TODO: Move Mike operations to a separate binary.
     let mike_state = Rc::new(RefCell::new(SimpleMicrophoneSenderState::default()));
 
     let (state1, state2) = (Rc::clone(&mike_state), Rc::clone(&mike_state));
@@ -133,12 +132,9 @@ fn main() {
         }),
     );
 
-    // 3. Initialize the Single-Threaded Async Executor
-    let executor: LocalExecutor = LocalExecutor::default();
+    log::info!("SENDER JIMMY BEGIN");
 
-    log::info!("\nSENDER JIMMY version 1.0\n");
-
-    // Send a message to reset this microphone for Jimmy.
+    // Send a message to reset the microphone for Jimmy.
     send_message(EspNowMessage {
         header: EspNowMessageHeader::ResetMicrophone,
         payload: EspNowMessagePayload {
@@ -148,7 +144,7 @@ fn main() {
         },
     });
 
-    // Send a message to reset this microphone for Mike.
+    // Send a message to reset the microphone for Mike.
     send_message(EspNowMessage {
         header: EspNowMessageHeader::ResetMicrophone,
         payload: EspNowMessagePayload {
@@ -158,9 +154,11 @@ fn main() {
         },
     });
 
-    // 4. Wrap your button tasks inside the executor block
+    // 3. Initialize a single-threaded async executor.
+    let executor: LocalExecutor = LocalExecutor::default();
+
+    // Run all button async loops concurrently forever.
     edge_executor::block_on(executor.run(async {
-        // Run all button async loops concurrently
         let _ = futures::join!(
             Box::pin(monitor_button(jimmy_latch)),
             Box::pin(monitor_button(jimmy_pushbutton)),
@@ -170,17 +168,19 @@ fn main() {
     }));
 }
 
-/// An async worker function that monitors a single GPIO pin for state changes.
+/// Check a button forever, and call its callback functions when a button state change is detected.
 async fn monitor_button<'a>(mut button: Button<'a>) {
     loop {
         button.wait_and_update().await;
     }
 }
 
+/// Send a message over ESP-NOW.
+/// Note: We don't bother setting up a callback function to check if receiver sent back an ACK packet.
 fn send_message(message: EspNowMessage) {
     log::info!("send_message: {:?}", message);
 
-    let result = unsafe {
+    let status = unsafe {
         esp_now_send(
             RECEIVER_MAC.as_ptr(),
             &raw const message as *const u8,
@@ -188,12 +188,12 @@ fn send_message(message: EspNowMessage) {
         )
     };
 
-    if result == ESP_OK {
+    if status == ESP_OK {
         log::info!(
             "Successfully sent {} bytes of message",
             ESP_NOW_MESSAGE_SIZE
         );
     } else {
-        log::error!("Error sending message: {:?}", result);
+        log::error!("Error sending message: {:?}", status);
     }
 }

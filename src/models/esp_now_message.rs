@@ -23,19 +23,21 @@ impl fmt::Debug for EspNowMessage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("EspNowMessage");
 
-        d.field("header", &self.header);
-
         match self.header {
             EspNowMessageHeader::ResetMicrophone => {
-                d.field("payload", unsafe { &self.payload.reset_microphone });
+                d.field("reset_microphone", unsafe {
+                    &self.payload.reset_microphone
+                });
             }
             EspNowMessageHeader::UpdateRoutableMicrophone => {
-                d.field("payload", unsafe {
+                d.field("update_routable_microphone", unsafe {
                     &self.payload.update_routable_microphone
                 });
             }
             EspNowMessageHeader::UpdateSimpleMicrophone => {
-                d.field("payload", unsafe { &self.payload.update_simple_microphone });
+                d.field("update_simple_microphone", unsafe {
+                    &self.payload.update_simple_microphone
+                });
             }
         };
 

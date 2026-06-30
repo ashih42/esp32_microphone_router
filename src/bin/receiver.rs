@@ -27,7 +27,7 @@ use esp32_microphone_router::{
 
 static TX_CHANNEL: OnceLock<Mutex<Sender<EspNowMessage>>> = OnceLock::new();
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
@@ -84,13 +84,12 @@ fn main() -> anyhow::Result<()> {
 
     let mut state = ReceiverState::default();
 
-    log::info!("\n\n RECEIVER version 1.0 \n\n");
+    log::info!("RECEIVER BEGIN");
 
-    // Whenever we receive a message, if it is valid, process it to update state, and then flush state to relays.
+    // Whenever we receive a message, if it is valid, process it to update `state`, and then flush `state` to relays.
     loop {
         if let Ok(message) = rx.recv() {
             process_message(&mut state, message);
-
             flush_state(
                 &state,
                 &mut relay_muting_routable_microphone,
@@ -102,10 +101,9 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-/// Update state from the message.
-/// Return a bool indicating if the message was accepted (or ignored because its timestamp is too old).
+/// Look into the union and pass the payload to the appropriate handler.
 fn process_message(state: &mut ReceiverState, message: EspNowMessage) {
-    log::info!("\nprocess_message: {:?}", message);
+    log::info!("process_message: {:?}", message);
 
     match message.header {
         EspNowMessageHeader::ResetMicrophone => {
@@ -124,6 +122,7 @@ fn process_message(state: &mut ReceiverState, message: EspNowMessage) {
     };
 }
 
+/// Reset the specific microphone's `last_message_id`.
 fn process_reset_microphone(state: &mut ReceiverState, payload: ResetMicrophonePayload) {
     match payload.microphone_id {
         MicrophoneId::RoutableMicrophone => {
@@ -135,6 +134,7 @@ fn process_reset_microphone(state: &mut ReceiverState, payload: ResetMicrophoneP
     }
 }
 
+/// If `message_id` is valid, update the state of the routable microphone.
 fn process_update_routable_microphone(
     state: &mut ReceiverState,
     payload: UpdateRoutableMicrophonePayload,
@@ -149,6 +149,7 @@ fn process_update_routable_microphone(
     }
 }
 
+/// If `message_id` is valid, update the state of the simple microphone.
 fn process_update_simple_microphone(
     state: &mut ReceiverState,
     payload: UpdateSimpleMicrophonePayload,
@@ -162,6 +163,7 @@ fn process_update_simple_microphone(
     }
 }
 
+/// Update the physical operation of the relays to match the `state`.
 fn flush_state<'a>(
     state: &ReceiverState,
     relay_muting_routable_microphone: &mut PinDriver<'a, Output>,
