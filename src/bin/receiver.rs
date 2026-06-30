@@ -11,7 +11,7 @@ use esp_idf_sys::{ESP_OK, esp_now_recv_info_t, esp_now_register_recv_cb};
 use std::{
     ptr,
     sync::{
-        Mutex, OnceLock,
+        OnceLock,
         mpsc::{self, Sender},
     },
 };
@@ -26,7 +26,7 @@ use esp32_microphone_router::{
     power,
 };
 
-static TX_CHANNEL: OnceLock<Mutex<Sender<EspNowMessage>>> = OnceLock::new();
+static TX_CHANNEL: OnceLock<Sender<EspNowMessage>> = OnceLock::new();
 
 fn main() {
     esp_idf_svc::sys::link_patches();
@@ -58,9 +58,8 @@ fn main() {
 
     esp_now::initialize_esp_now_as_receiver();
 
-    let cb_err = unsafe { esp_now_register_recv_cb(Some(on_data_recv_callback)) };
-    if cb_err != ESP_OK {
-        panic!("Failed to register receive callback: {:?}", cb_err);
+    if unsafe { esp_now_register_recv_cb(Some(on_data_recv_callback)) } != ESP_OK {
+        panic!("Failed to register receive callback.");
     }
 
     // ---------------------------------------------------------------------------------------
@@ -81,7 +80,7 @@ fn main() {
     // ---------------------------------------------------------------------------------------
     let (tx, rx) = mpsc::channel();
 
-    if let Err(err) = TX_CHANNEL.set(Mutex::new(tx)) {
+    if let Err(err) = TX_CHANNEL.set(tx) {
         panic!("Failed to initialize TX_CHANNEL: {:?}", err);
     }
 
@@ -228,11 +227,10 @@ extern "C" fn on_data_recv_callback(
 
     log::info!("ESP-NOW Received message: {:?}", message);
 
-    if let Some(mutex) = TX_CHANNEL.get()
-        && let Ok(tx) = mutex.lock()
-    {
-        if let Err(e) = tx.send(message) {
-            log::error!("Failed to forward value to main loop channel: {:?}", e);
+    #[allow(clippy::collapsible_if)]
+    if let Some(tx) = TX_CHANNEL.get() {
+        if let Err(err) = tx.send(message) {
+            log::error!("Failed to forward value to main loop channel: {:?}", err);
         }
     }
 }
