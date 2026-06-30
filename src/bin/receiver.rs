@@ -18,10 +18,14 @@ use std::{
 
 use esp32_microphone_router::{
     esp_now,
-    models::{MESSAGE_SIZE, Message, MicrophoneRoute, ReceiverState},
+    models::{
+        ESP_NOW_MESSAGE_SIZE, EspNowMessage, EspNowMessageHeader, MicrophoneId, MicrophoneRoute,
+        ReceiverState, ResetMicrophonePayload, UpdateRoutableMicrophonePayload,
+        UpdateSimpleMicrophonePayload,
+    },
 };
 
-static TX_CHANNEL: OnceLock<Mutex<Sender<Message>>> = OnceLock::new();
+static TX_CHANNEL: OnceLock<Mutex<Sender<EspNowMessage>>> = OnceLock::new();
 
 fn main() -> anyhow::Result<()> {
     esp_idf_svc::sys::link_patches();
@@ -84,9 +88,9 @@ fn main() -> anyhow::Result<()> {
 
     // Whenever we receive a message, if it is valid, process it to update state, and then flush state to relays.
     loop {
-        if let Ok(message) = rx.recv()
-            && process_message(&mut state, message)
-        {
+        if let Ok(message) = rx.recv() {
+            process_message(&mut state, message);
+
             flush_state(
                 &state,
                 &mut relay_muting_routable_microphone,
@@ -100,33 +104,61 @@ fn main() -> anyhow::Result<()> {
 
 /// Update state from the message.
 /// Return a bool indicating if the message was accepted (or ignored because its timestamp is too old).
-fn process_message(state: &mut ReceiverState, message: Message) -> bool {
+fn process_message(state: &mut ReceiverState, message: EspNowMessage) {
     log::info!("\nprocess_message: {:?}", message);
 
-    match message.route {
-        Some(route) => {
-            if message.message_id > state.routable_microphone.last_message_id {
-                state.routable_microphone.route = route;
-                state.routable_microphone.active = message.active;
-                state.routable_microphone.last_message_id = message.message_id;
-                log::warn!("Accepted this message.");
-                true
-            } else {
-                log::warn!("Rejected this old message.");
-                false
-            }
+    match message.header {
+        EspNowMessageHeader::ResetMicrophone => {
+            process_reset_microphone(state, unsafe { message.payload.reset_microphone })
         }
-        None => {
-            if message.message_id > state.simple_microphone.last_message_id {
-                state.simple_microphone.active = message.active;
-                state.simple_microphone.last_message_id = message.message_id;
-                log::warn!("Accepted this message.");
-                true
-            } else {
-                log::warn!("Rejected this old message.");
-                false
-            }
+        EspNowMessageHeader::UpdateRoutableMicrophone => {
+            process_update_routable_microphone(state, unsafe {
+                message.payload.update_routable_microphone
+            })
         }
+        EspNowMessageHeader::UpdateSimpleMicrophone => {
+            process_update_simple_microphone(state, unsafe {
+                message.payload.update_simple_microphone
+            })
+        }
+    };
+}
+
+fn process_reset_microphone(state: &mut ReceiverState, payload: ResetMicrophonePayload) {
+    match payload.microphone_id {
+        MicrophoneId::RoutableMicrophone => {
+            state.routable_microphone.last_message_id = 0;
+        }
+        MicrophoneId::SimpleMicrophone => {
+            state.simple_microphone.last_message_id = 0;
+        }
+    }
+}
+
+fn process_update_routable_microphone(
+    state: &mut ReceiverState,
+    payload: UpdateRoutableMicrophonePayload,
+) {
+    if payload.message_id > state.routable_microphone.last_message_id {
+        state.routable_microphone.route = payload.route;
+        state.routable_microphone.active = payload.active;
+        state.routable_microphone.last_message_id = payload.message_id;
+        log::info!("Accepted this message.");
+    } else {
+        log::warn!("Rejected this old message.");
+    }
+}
+
+fn process_update_simple_microphone(
+    state: &mut ReceiverState,
+    payload: UpdateSimpleMicrophonePayload,
+) {
+    if payload.message_id > state.simple_microphone.last_message_id {
+        state.simple_microphone.active = payload.active;
+        state.simple_microphone.last_message_id = payload.message_id;
+        log::info!("Accepted this message.");
+    } else {
+        log::warn!("Rejected this old message.");
     }
 }
 
@@ -137,12 +169,14 @@ fn flush_state<'a>(
     relay_routing2: &mut PinDriver<'a, Output>,
     relay_muting_simple_microphone: &mut PinDriver<'a, Output>,
 ) {
+    // Mute or unmute Routable Microphone.
     if state.routable_microphone.active {
         relay_muting_routable_microphone.set_high().unwrap();
     } else {
         relay_muting_routable_microphone.set_low().unwrap();
     }
 
+    // Update routing of Routable Microphone.
     match state.routable_microphone.route {
         MicrophoneRoute::ToAudience => {
             relay_routing1.set_low().unwrap();
@@ -154,6 +188,7 @@ fn flush_state<'a>(
         }
     }
 
+    // Mute or unmute Simple Microphone.
     if state.simple_microphone.active {
         relay_muting_simple_microphone.set_high().unwrap();
     } else {
@@ -175,16 +210,16 @@ extern "C" fn on_data_recv_callback(
 ) {
     let data_len = data_len as usize;
 
-    if data_len != MESSAGE_SIZE {
+    if data_len != ESP_NOW_MESSAGE_SIZE {
         log::error!(
             "Unexpected payload size! Expected {} bytes, received {} bytes.",
-            MESSAGE_SIZE,
+            ESP_NOW_MESSAGE_SIZE,
             data_len
         );
         return;
     }
 
-    let message = unsafe { ptr::read_unaligned(data as *const Message) };
+    let message = unsafe { ptr::read_unaligned(data as *const EspNowMessage) };
 
     log::info!("ESP-NOW Received message: {:?}", message);
 

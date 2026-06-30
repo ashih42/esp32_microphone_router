@@ -16,8 +16,9 @@ use esp32_microphone_router::{
     config::RECEIVER_MAC,
     esp_now,
     models::{
-        MESSAGE_SIZE, Message, RoutableMicrophoneSenderState, SimpleMicrophoneSenderState,
-        ToMessage,
+        ESP_NOW_MESSAGE_SIZE, EspNowMessage, EspNowMessageHeader, EspNowMessagePayload,
+        MicrophoneId, ResetMicrophonePayload, RoutableMicrophoneSenderState,
+        SimpleMicrophoneSenderState, ToMessage,
     },
 };
 
@@ -137,6 +138,26 @@ fn main() {
 
     log::info!("\nSENDER JIMMY version 1.0\n");
 
+    // Send a message to reset this microphone for Jimmy.
+    send_message(EspNowMessage {
+        header: EspNowMessageHeader::ResetMicrophone,
+        payload: EspNowMessagePayload {
+            reset_microphone: ResetMicrophonePayload {
+                microphone_id: MicrophoneId::RoutableMicrophone,
+            },
+        },
+    });
+
+    // Send a message to reset this microphone for Mike.
+    send_message(EspNowMessage {
+        header: EspNowMessageHeader::ResetMicrophone,
+        payload: EspNowMessagePayload {
+            reset_microphone: ResetMicrophonePayload {
+                microphone_id: MicrophoneId::SimpleMicrophone,
+            },
+        },
+    });
+
     // 4. Wrap your button tasks inside the executor block
     edge_executor::block_on(executor.run(async {
         // Run all button async loops concurrently
@@ -156,19 +177,22 @@ async fn monitor_button<'a>(mut button: Button<'a>) {
     }
 }
 
-fn send_message(message: Message) {
+fn send_message(message: EspNowMessage) {
     log::info!("send_message: {:?}", message);
 
     let result = unsafe {
         esp_now_send(
             RECEIVER_MAC.as_ptr(),
             &raw const message as *const u8,
-            MESSAGE_SIZE,
+            ESP_NOW_MESSAGE_SIZE,
         )
     };
 
     if result == ESP_OK {
-        log::info!("Successfully sent {} bytes of message", MESSAGE_SIZE);
+        log::info!(
+            "Successfully sent {} bytes of message",
+            ESP_NOW_MESSAGE_SIZE
+        );
     } else {
         log::error!("Error sending message: {:?}", result);
     }

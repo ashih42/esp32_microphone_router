@@ -1,5 +1,9 @@
+use std::sync::atomic::{AtomicU16, Ordering};
+
 use crate::models::{
-    message::{Message, ToMessage},
+    EspNowMessageHeader, EspNowMessagePayload, UpdateRoutableMicrophonePayload,
+    UpdateSimpleMicrophonePayload,
+    esp_now_message::{EspNowMessage, ToMessage},
     microphone::MicrophoneRoute,
 };
 
@@ -11,53 +15,60 @@ pub struct RoutableMicrophoneSenderState {
 }
 
 impl ToMessage for RoutableMicrophoneSenderState {
-    fn to_message(&self) -> Message {
-        let message_id = Message::generate_message_id();
+    fn to_message(&self) -> EspNowMessage {
+        let message_id = generate_message_id();
 
-        match (
+        let update_routable_microphone = match (
             self.to_audience_latch_is_pressed,
             self.to_band_pedal_is_pressed,
             self.to_audience_pushbutton_is_pressed,
         ) {
-            (false, false, false) => Message {
+            (false, false, false) => UpdateRoutableMicrophonePayload {
                 active: false,
-                route: Some(MicrophoneRoute::default()),
+                route: MicrophoneRoute::default(),
                 message_id,
             },
-            (false, false, true) => Message {
+            (false, false, true) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToAudience),
+                route: MicrophoneRoute::ToAudience,
                 message_id,
             },
-            (false, true, false) => Message {
+            (false, true, false) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToBand),
+                route: MicrophoneRoute::ToBand,
                 message_id,
             },
-            (false, true, true) => Message {
+            (false, true, true) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToBand),
+                route: MicrophoneRoute::ToBand,
                 message_id,
             },
-            (true, false, false) => Message {
+            (true, false, false) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToAudience),
+                route: MicrophoneRoute::ToAudience,
                 message_id,
             },
-            (true, false, true) => Message {
+            (true, false, true) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToAudience),
+                route: MicrophoneRoute::ToAudience,
                 message_id,
             },
-            (true, true, false) => Message {
+            (true, true, false) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToBand),
+                route: MicrophoneRoute::ToBand,
                 message_id,
             },
-            (true, true, true) => Message {
+            (true, true, true) => UpdateRoutableMicrophonePayload {
                 active: true,
-                route: Some(MicrophoneRoute::ToBand),
+                route: MicrophoneRoute::ToBand,
                 message_id,
+            },
+        };
+
+        EspNowMessage {
+            header: EspNowMessageHeader::UpdateRoutableMicrophone,
+            payload: EspNowMessagePayload {
+                update_routable_microphone,
             },
         }
     }
@@ -69,11 +80,22 @@ pub struct SimpleMicrophoneSenderState {
 }
 
 impl ToMessage for SimpleMicrophoneSenderState {
-    fn to_message(&self) -> Message {
-        Message {
-            active: self.to_audience_pushbutton_is_pressed,
-            route: None,
-            message_id: Message::generate_message_id(),
+    fn to_message(&self) -> EspNowMessage {
+        EspNowMessage {
+            header: EspNowMessageHeader::UpdateSimpleMicrophone,
+            payload: EspNowMessagePayload {
+                update_simple_microphone: UpdateSimpleMicrophonePayload {
+                    active: self.to_audience_pushbutton_is_pressed,
+                    message_id: generate_message_id(),
+                },
+            },
         }
     }
+}
+
+fn generate_message_id() -> u16 {
+    static COUNTER: AtomicU16 = AtomicU16::new(1);
+
+    // Return the current value in `COUNTER`, and then increment `COUNTER`.
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }

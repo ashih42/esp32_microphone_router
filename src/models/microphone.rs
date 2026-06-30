@@ -11,8 +11,8 @@ pub struct SimpleMicrophone {
     pub last_message_id: u16,
 }
 
-#[derive(Default, Debug)]
 #[repr(u8)]
+#[derive(Default, Debug, Clone, Copy)]
 pub enum MicrophoneRoute {
     #[default]
     ToAudience,
