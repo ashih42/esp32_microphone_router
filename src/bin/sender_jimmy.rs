@@ -55,6 +55,7 @@ fn main() {
     let sender1 = Rc::clone(&sender);
     let mut to_audience_latch = Button::new(
         peripherals.pins.gpio22,
+        true,
         Some(Box::new(move || {
             log::info!("to_audience_latch PRESS");
 
@@ -70,6 +71,7 @@ fn main() {
     let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
     let mut to_audience_pushbutton = Button::new(
         peripherals.pins.gpio21,
+        true,
         Some(Box::new(move || {
             log::info!("to_audience_pushbutton PRESS");
 
@@ -92,6 +94,7 @@ fn main() {
     let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
     let mut to_band_pedal = Button::new(
         peripherals.pins.gpio19,
+        false,
         Some(Box::new(move || {
             log::info!("to_band_pedal PRESS");
 

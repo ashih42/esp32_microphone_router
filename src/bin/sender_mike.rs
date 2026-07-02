@@ -54,6 +54,7 @@ fn main() {
     let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
     let mut active_pushbutton = Button::new(
         peripherals.pins.gpio22,
+        false,
         Some(Box::new(move || {
             log::info!("mike_pushbutton PRESS");
 
