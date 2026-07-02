@@ -10,7 +10,7 @@ use std::{cell::RefCell, rc::Rc};
 use esp32_microphone_router::{
     button::Button,
     esp_now,
-    models::{MicrophoneSender, RoutableMicrophoneSender},
+    models::{MicrophoneSender, SimpleMicrophoneSender},
     power,
 };
 
@@ -47,83 +47,41 @@ fn main() {
     // --------------------------------------------------------------------------------------------
 
     // Create the top-level sender object.
-    let sender = Rc::new(RefCell::new(RoutableMicrophoneSender::new(
-        peripherals.pins.gpio17,
-        peripherals.pins.gpio16,
+    let sender = Rc::new(RefCell::new(SimpleMicrophoneSender::new(
+        peripherals.pins.gpio21,
     )));
 
     sender.borrow_mut().initialize();
 
-    // Set up callbacks on press/release of the button serving as the latch to audience.
-    let sender1 = Rc::clone(&sender);
-    let mut to_audience_latch = Button::new(
+    // Set up callbacks on press/release of the button serving as the button to activate microphone.
+    let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
+    let mut active_pushbutton = Button::new(
         peripherals.pins.gpio22,
         Some(Box::new(move || {
-            log::info!("to_audience_latch PRESS");
+            log::info!("mike_pushbutton PRESS");
 
             let mut sender = sender1.borrow_mut();
 
-            sender.physical_state.flip_to_audience_latch();
-            sender.update();
-        })),
-        None,
-    );
-
-    // Set up callbacks on press/release of the button serving as the button to audience.
-    let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
-    let mut to_audience_pushbutton = Button::new(
-        peripherals.pins.gpio21,
-        Some(Box::new(move || {
-            log::info!("to_audience_pushbutton PRESS");
-
-            let mut sender = sender1.borrow_mut();
-
-            sender.physical_state.to_audience_pushbutton_is_pressed = true;
+            sender.physical_state.active_pushbutton_is_pressed = true;
             sender.update();
         })),
         Some(Box::new(move || {
-            log::info!("to_audience_pushbutton RELEASE");
+            log::info!("mike_pushbutton RELEASE");
 
             let mut sender = sender2.borrow_mut();
 
-            sender.physical_state.to_audience_pushbutton_is_pressed = false;
+            sender.physical_state.active_pushbutton_is_pressed = false;
             sender.update();
         })),
     );
 
-    // Set up callbacks on press/release of the button serving as the pedal to band.
-    let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
-    let mut to_band_pedal = Button::new(
-        peripherals.pins.gpio19,
-        Some(Box::new(move || {
-            log::info!("to_band_pedal PRESS");
-
-            let mut sender = sender1.borrow_mut();
-
-            sender.physical_state.to_band_pedal_is_pressed = true;
-            sender.update();
-        })),
-        Some(Box::new(move || {
-            log::info!("to_band_pedal RELEASE");
-
-            let mut sender = sender2.borrow_mut();
-
-            sender.physical_state.to_band_pedal_is_pressed = false;
-            sender.update();
-        })),
-    );
-
-    log::info!("SENDER JIMMY BEGIN");
+    log::info!("SENDER MIKE BEGIN");
 
     // 3. Initialize a single-threaded async executor.
     let executor: LocalExecutor = LocalExecutor::default();
 
     // Run all button async loops concurrently forever.
     edge_executor::block_on(executor.run(async {
-        let _ = futures::join!(
-            Box::pin(to_audience_latch.run()),
-            Box::pin(to_audience_pushbutton.run()),
-            Box::pin(to_band_pedal.run()),
-        );
+        let _ = futures::join!(Box::pin(active_pushbutton.run()));
     }));
 }

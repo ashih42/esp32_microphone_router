@@ -2,7 +2,7 @@ use esp_idf_hal::gpio::{Output, OutputPin, PinDriver};
 
 use crate::{
     esp_now,
-    models::{EspNowMessage, MicrophoneRoute, ToMessage},
+    models::{EspNowMessage, MicrophoneRoute, MicrophoneSender, MicrophoneType, ToMessage},
 };
 
 pub struct RoutableMicrophoneSender<'a> {
@@ -21,15 +21,29 @@ impl<'a> RoutableMicrophoneSender<'a> {
             hardware: RoutableMicrophoneSenderHardware::new(to_audience_led_pin, to_band_led_pin),
         }
     }
+}
 
-    pub fn update(&mut self) {
-        // 1. Generate logical state.
+impl<'a> MicrophoneSender for RoutableMicrophoneSender<'a> {
+    fn initialize(&mut self) {
+        // Turn off LEDs.
+        self.hardware.initialize();
+
+        // Send a message telling the receiver to reset this microphone.
+        esp_now::send_message(EspNowMessage::ResetMicrophone {
+            microphone_type: MicrophoneType::RoutableMicrophone,
+        });
+    }
+
+    /// Whenever after `physical_state` was updated by button press/release events, call this function to
+    /// propagate the effects to other parts of the system.
+    fn update(&mut self) {
+        // 1. Generate logical state from physical state.
         let logical_state = self.physical_state.to_logical_state();
 
-        // 2. Update hardware.
+        // 2. Use logical state to update hardware.
         self.hardware.update(&logical_state);
 
-        // 3. Send message over ESP-NOW.
+        // 3. Use logical state to create message to send over ESP-NOW.
         esp_now::send_message(logical_state.to_message());
     }
 }
@@ -47,7 +61,7 @@ impl RoutableMicrophoneSenderPhysicalState {
     }
 }
 
-pub struct RoutableMicrophoneSenderHardware<'a> {
+struct RoutableMicrophoneSenderHardware<'a> {
     to_audience_led: PinDriver<'a, Output>,
     to_band_led: PinDriver<'a, Output>,
 }
@@ -58,23 +72,24 @@ impl<'a> RoutableMicrophoneSenderHardware<'a> {
         T: OutputPin + 'a,
         U: OutputPin + 'a,
     {
-        let mut to_audience_led = PinDriver::output(to_audience_led_pin).unwrap();
-        let mut to_band_led = PinDriver::output(to_band_led_pin).unwrap();
-
-        to_audience_led.set_low().unwrap();
-        to_band_led.set_low().unwrap();
-
         Self {
-            to_audience_led,
-            to_band_led,
+            to_audience_led: PinDriver::output(to_audience_led_pin).unwrap(),
+            to_band_led: PinDriver::output(to_band_led_pin).unwrap(),
         }
     }
 
+    /// Turn off LEDs.
+    fn initialize(&mut self) {
+        self.to_audience_led.set_low().unwrap();
+        self.to_band_led.set_low().unwrap();
+    }
+
+    /// Update LEDs.
     fn update(&mut self, logical_state: &RoutableMicrophoneLogicalState) {
-        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Off};
+        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Muted};
 
         match logical_state {
-            Off => {
+            Muted => {
                 self.to_audience_led.set_low().unwrap();
                 self.to_band_led.set_low().unwrap();
             }
@@ -93,14 +108,14 @@ impl<'a> RoutableMicrophoneSenderHardware<'a> {
 impl RoutableMicrophoneSenderPhysicalState {
     /// Reference: https://docs.google.com/spreadsheets/d/1QiK6jzAJQySYgz_KvizED40fUrpU3yX_CyY_O5MObKY/edit?gid=0#gid=0
     pub fn to_logical_state(&self) -> RoutableMicrophoneLogicalState {
-        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Off};
+        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Muted};
 
         match (
             self.to_audience_latch_is_pressed,
             self.to_band_pedal_is_pressed,
             self.to_audience_pushbutton_is_pressed,
         ) {
-            (false, false, false) => Off,
+            (false, false, false) => Muted,
             (false, false, true) => ActiveToAudience,
             (false, true, false) => ActiveToBand,
             (false, true, true) => ActiveToBand,
@@ -115,7 +130,7 @@ impl RoutableMicrophoneSenderPhysicalState {
 #[derive(Default, Debug, PartialEq, Eq)]
 pub enum RoutableMicrophoneLogicalState {
     #[default]
-    Off,
+    Muted,
     ActiveToAudience,
     ActiveToBand,
 }
@@ -125,7 +140,7 @@ impl ToMessage for RoutableMicrophoneLogicalState {
         let message_id = EspNowMessage::generate_message_id();
 
         match self {
-            Self::Off => EspNowMessage::UpdateRoutableMicrophone {
+            Self::Muted => EspNowMessage::UpdateRoutableMicrophone {
                 active: false,
                 route: MicrophoneRoute::default(),
                 message_id,
@@ -152,7 +167,7 @@ mod tests {
     /// Reference: https://docs.google.com/spreadsheets/d/1QiK6jzAJQySYgz_KvizED40fUrpU3yX_CyY_O5MObKY/edit?gid=0#gid=0
     #[test]
     fn test_physical_state_to_logical_state() {
-        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Off};
+        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Muted};
 
         {
             let state = RoutableMicrophoneSenderPhysicalState {
@@ -161,7 +176,7 @@ mod tests {
                 to_audience_pushbutton_is_pressed: false,
             };
 
-            assert_eq!(state.to_logical_state(), Off);
+            assert_eq!(state.to_logical_state(), Muted);
         }
 
         {
@@ -238,10 +253,10 @@ mod tests {
     /// Check all 3 possible logical states.
     #[test]
     fn test_logical_state_to_message() {
-        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Off};
+        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Muted};
 
         assert!(matches!(
-            Off.to_message(),
+            Muted.to_message(),
             EspNowMessage::UpdateRoutableMicrophone { active: false, .. }
         ));
 

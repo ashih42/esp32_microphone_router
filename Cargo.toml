@@ -18,6 +18,11 @@ path = "./src/bin/sender_jimmy.rs"
 harness = false
 
 [[bin]]
+name = "sender_mike"
+path = "./src/bin/sender_mike.rs"
+harness = false
+
+[[bin]]
 name = "receiver"
 path = "./src/bin/receiver.rs"
 harness = false
