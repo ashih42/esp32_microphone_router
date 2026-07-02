@@ -1,8 +1,5 @@
 use core::slice;
-use esp_idf_hal::{
-    gpio::{Output, PinDriver},
-    peripherals::Peripherals,
-};
+use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::{
     eventloop::EspSystemEventLoop,
     nvs::EspDefaultNvsPartition,
@@ -15,11 +12,7 @@ use std::sync::{
 };
 
 use esp32_microphone_router::{
-    esp_now,
-    models::{
-        EspNowMessage, MicrophoneRoute, MicrophoneType, ReceiverState, RoutableMicrophone,
-        SimpleMicrophone,
-    },
+    models::{EspNowMessage, Receiver},
     power,
 };
 
@@ -53,144 +46,38 @@ fn main() {
 
     wifi.start().expect("Failed to start wifi.");
 
-    esp_now::initialize_esp_now_as_receiver();
+    // --------------------------------------------------------------------------------------------
 
+    // Create the top-level receiver object.
+    let mut receiver = Receiver::new(
+        peripherals.pins.gpio23,
+        peripherals.pins.gpio22,
+        peripherals.pins.gpio21,
+        peripherals.pins.gpio19,
+    );
+
+    receiver.initialize();
+
+    // Register callback function for whenever a ESP-NOW packet is received.
     if unsafe { esp_now_register_recv_cb(Some(on_data_recv_callback)) } != ESP_OK {
-        panic!("Failed to register receive callback.");
+        panic!("esp_now_register_recv_cb() failed.");
     }
 
-    // ---------------------------------------------------------------------------------------
-    // Set up relays.
-    // ---------------------------------------------------------------------------------------
-    let mut relay_muting_routable_microphone = PinDriver::output(peripherals.pins.gpio23).unwrap();
-    let mut relay_routing1 = PinDriver::output(peripherals.pins.gpio22).unwrap();
-    let mut relay_routing2 = PinDriver::output(peripherals.pins.gpio21).unwrap();
-    let mut relay_muting_simple_microphone = PinDriver::output(peripherals.pins.gpio19).unwrap();
-
-    relay_muting_routable_microphone.set_low().unwrap();
-    relay_routing1.set_low().unwrap();
-    relay_routing2.set_low().unwrap();
-    relay_muting_simple_microphone.set_low().unwrap();
-
-    // ---------------------------------------------------------------------------------------
     // Set up a channel for the callback function to send, for the main loop to receive.
-    // ---------------------------------------------------------------------------------------
     let (tx, rx) = mpsc::channel();
 
+    // Move `tx` into the global `TX_CHANNEL` so the callback function can access it.
     if let Err(err) = TX_CHANNEL.set(tx) {
         panic!("Failed to initialize TX_CHANNEL: {:?}", err);
     }
 
-    let mut state = ReceiverState::default();
-
     log::info!("RECEIVER BEGIN");
 
-    // Whenever we receive a message, if it is valid, process it to update `state`, and then flush `state` to relays.
+    // Whenever we receive a message (sent from the callback), let `receiver` handle it.
     loop {
         if let Ok(message) = rx.recv() {
-            process_message(&mut state, message);
-            flush_state(
-                &state,
-                &mut relay_muting_routable_microphone,
-                &mut relay_routing1,
-                &mut relay_routing2,
-                &mut relay_muting_simple_microphone,
-            );
+            receiver.update(message);
         }
-    }
-}
-
-/// Look into the union and pass the payload to the appropriate handler.
-fn process_message(state: &mut ReceiverState, message: EspNowMessage) {
-    log::info!("process_message: {:?}", message);
-
-    match message {
-        EspNowMessage::ResetMicrophone { microphone_type } => {
-            reset_microphone(state, microphone_type)
-        }
-        EspNowMessage::UpdateRoutableMicrophone {
-            message_id,
-            route,
-            active,
-        } => update_routable_microphone(&mut state.routable_microphone, message_id, route, active),
-        EspNowMessage::UpdateSimpleMicrophone { message_id, active } => {
-            update_simple_microphone(&mut state.simple_microphone, message_id, active)
-        }
-    };
-}
-
-/// Reset the specific microphone's `last_message_id`.
-fn reset_microphone(state: &mut ReceiverState, microphone_type: MicrophoneType) {
-    match microphone_type {
-        MicrophoneType::RoutableMicrophone => {
-            state.routable_microphone.last_message_id = 0;
-        }
-        MicrophoneType::SimpleMicrophone => {
-            state.simple_microphone.last_message_id = 0;
-        }
-    }
-}
-
-/// If `message_id` is valid, update the state of the routable microphone.
-fn update_routable_microphone(
-    microphone: &mut RoutableMicrophone,
-    message_id: u16,
-    route: MicrophoneRoute,
-    active: bool,
-) {
-    if message_id > microphone.last_message_id {
-        microphone.route = route;
-        microphone.active = active;
-        microphone.last_message_id = message_id;
-        log::info!("Accepted this message.");
-    } else {
-        log::warn!("Rejected this old message.");
-    }
-}
-
-/// If `message_id` is valid, update the state of the simple microphone.
-fn update_simple_microphone(microphone: &mut SimpleMicrophone, message_id: u16, active: bool) {
-    if message_id > microphone.last_message_id {
-        microphone.active = active;
-        microphone.last_message_id = message_id;
-        log::info!("Accepted this message.");
-    } else {
-        log::warn!("Rejected this old message.");
-    }
-}
-
-/// Update the physical operation of the relays to match the `state`.
-fn flush_state<'a>(
-    state: &ReceiverState,
-    relay_muting_routable_microphone: &mut PinDriver<'a, Output>,
-    relay_routing1: &mut PinDriver<'a, Output>,
-    relay_routing2: &mut PinDriver<'a, Output>,
-    relay_muting_simple_microphone: &mut PinDriver<'a, Output>,
-) {
-    // Mute or unmute Routable Microphone.
-    if state.routable_microphone.active {
-        relay_muting_routable_microphone.set_high().unwrap();
-    } else {
-        relay_muting_routable_microphone.set_low().unwrap();
-    }
-
-    // Update routing of Routable Microphone.
-    match state.routable_microphone.route {
-        MicrophoneRoute::ToAudience => {
-            relay_routing1.set_low().unwrap();
-            relay_routing2.set_low().unwrap();
-        }
-        MicrophoneRoute::ToBand => {
-            relay_routing1.set_high().unwrap();
-            relay_routing2.set_high().unwrap();
-        }
-    }
-
-    // Mute or unmute Simple Microphone.
-    if state.simple_microphone.active {
-        relay_muting_simple_microphone.set_high().unwrap();
-    } else {
-        relay_muting_simple_microphone.set_low().unwrap();
     }
 }
 
@@ -198,9 +85,9 @@ fn flush_state<'a>(
 // ESP-NOW Receive Callback (Runs inside underlying WiFi Task Context)
 // ============================================================================
 
-/// This callback is triggered whenever an ESP-NOW packet arrives, called by a wifi thread.
+/// This callback is triggered whenever an ESP-NOW packet arrives, called by a single wifi thread.
 /// This function converts packet data into a EspNowMessage and sends it back to main thread for processing.
-/// Note: With encryption checked by hardware, we can be confident this is getting a valid packet from our sender most of the time.
+/// Note: With encryption checked by hardware, we can be confident this is probably a valid packet from our sender.
 extern "C" fn on_data_recv_callback(
     _info: *const esp_now_recv_info_t,
     data: *const u8,
@@ -213,13 +100,16 @@ extern "C" fn on_data_recv_callback(
 
     let raw_slice = unsafe { slice::from_raw_parts(data, data_len as usize) };
 
+    // Construct a `EspNowMessage` from bytes.
     match postcard::from_bytes::<EspNowMessage>(raw_slice) {
         Err(err) => {
             log::error!("postcard::from_bytes() failed: {}", err);
         }
+
         Ok(message) => {
             log::info!("ESP-NOW Received message: {:?}", message);
 
+            // Send the message into `TX_CHANNEL`.
             #[allow(clippy::collapsible_if)]
             if let Some(tx) = TX_CHANNEL.get() {
                 if let Err(err) = tx.send(message) {
