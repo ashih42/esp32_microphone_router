@@ -27,6 +27,9 @@ name = "doge"
 path = "./src/bin/tmp/doge.rs"
 harness = false
 
+[profile.test]
+debug = true
+
 [profile.release]
 opt-level = "s"
 

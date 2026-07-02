@@ -1,10 +1,13 @@
 use esp_idf_sys::{
-    ESP_OK, esp_now_add_peer, esp_now_init, esp_now_peer_info, esp_now_peer_info_t,
+    ESP_OK, esp_now_add_peer, esp_now_init, esp_now_peer_info, esp_now_peer_info_t, esp_now_send,
     esp_now_set_pmk, wifi_interface_t_WIFI_IF_STA,
 };
 
-use crate::config::{
-    ESP_NOW_LMK, ESP_NOW_PMK, RECEIVER_MAC, SENDER_JIMMY_MAC, SENDER_MIKE_MAC, WIFI_CHANNEL,
+use crate::{
+    config::{
+        ESP_NOW_LMK, ESP_NOW_PMK, RECEIVER_MAC, SENDER_JIMMY_MAC, SENDER_MIKE_MAC, WIFI_CHANNEL,
+    },
+    models::EspNowMessage,
 };
 
 pub fn initialize_esp_now_as_sender() {
@@ -72,3 +75,26 @@ static SENDER_MIKE_PEER_INFO: EspNowPeerInfo = EspNowPeerInfo(esp_now_peer_info_
     lmk: ESP_NOW_LMK,
     priv_: std::ptr::null_mut(),
 });
+
+/// Send a message over ESP-NOW.
+pub fn send_message(message: EspNowMessage) {
+    log::info!("send_message: {:?}", message);
+
+    // ESP-NOW v1.0 max payload size is 250 bytes.
+    let mut buffer = [0_u8; 250];
+
+    match postcard::to_slice(&message, &mut buffer) {
+        Err(err) => {
+            log::error!("postcard::to_slice failed: {}", err);
+        }
+        Ok(data) => {
+            let status = unsafe { esp_now_send(RECEIVER_MAC.as_ptr(), data.as_ptr(), data.len()) };
+
+            if status == ESP_OK {
+                log::info!("Successfully sent {} bytes of message", data.len());
+            } else {
+                log::error!("esp_now_send() failed: {:?}", status);
+            }
+        }
+    }
+}

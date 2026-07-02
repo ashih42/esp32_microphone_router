@@ -16,8 +16,8 @@ use esp32_microphone_router::{
     config::RECEIVER_MAC,
     esp_now,
     models::{
-        EspNowMessage, MicrophoneType, RoutableMicrophoneSenderState, SimpleMicrophoneSenderState,
-        ToMessage,
+        EspNowMessage, MicrophoneType, RoutableMicrophoneSender,
+        RoutableMicrophoneSenderPhysicalState, ToMessage,
     },
     power,
 };
@@ -54,97 +54,100 @@ fn main() {
 
     // --------------------------------------------------------------------------------------------
 
-    // Set up input devices with callbacks.
-    let state = Rc::new(RefCell::new(RoutableMicrophoneSenderState::default()));
+    // Create the top-level master object.
+    let sender = Rc::new(RefCell::new(RoutableMicrophoneSender::new(
+        peripherals.pins.gpio17,
+        peripherals.pins.gpio16,
+    )));
 
-    let mut latch_led = PinDriver::output(peripherals.pins.gpio23).expect("Failed to set up LED.");
-    latch_led.set_low().unwrap();
-
-    let state1 = Rc::clone(&state);
-    let jimmy_latch = Button::new(
+    // Set up callbacks on press/release of the button serving as the latch to audience.
+    let sender1 = Rc::clone(&sender);
+    let mut jimmy_latch = Button::new(
         peripherals.pins.gpio22,
-        Box::new(move || {
+        Some(Box::new(move || {
             log::info!("jimmy_latch PRESS");
 
-            // 1. Flip the latch state.
-            let mut _state = state1.borrow_mut();
-            _state.to_audience_latch_is_pressed = !_state.to_audience_latch_is_pressed;
+            let mut sender = sender1.borrow_mut();
 
-            // 2. Update the latch led.
-            let level = if _state.to_audience_latch_is_pressed {
-                Level::High
-            } else {
-                Level::Low
-            };
-            latch_led.set_level(level).unwrap();
-
-            // 3. Send message.
-            send_message(_state.to_message());
-        }),
-        Box::new(|| {
-            log::info!("jimmy_latch RELEASE (do nothing)");
-        }),
+            sender.physical_state.flip_to_audience_latch();
+            sender.update();
+        })),
+        None,
     );
 
-    let (state1, state2) = (Rc::clone(&state), Rc::clone(&state));
-    let jimmy_pushbutton = Button::new(
+    // Set up callbacks on press/release of the button serving as the button to audience.
+    let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
+    let mut jimmy_pushbutton = Button::new(
         peripherals.pins.gpio21,
-        Box::new(move || {
+        Some(Box::new(move || {
             log::info!("jimmy_pushbutton PRESS");
-            state1.borrow_mut().to_audience_pushbutton_is_pressed = true;
-            send_message(state1.borrow().to_message());
-        }),
-        Box::new(move || {
+
+            let mut sender = sender1.borrow_mut();
+
+            sender.physical_state.to_audience_pushbutton_is_pressed = true;
+            sender.update();
+        })),
+        Some(Box::new(move || {
             log::info!("jimmy_pushbutton RELEASE");
-            state2.borrow_mut().to_audience_pushbutton_is_pressed = false;
-            send_message(state2.borrow().to_message());
-        }),
+
+            let mut sender = sender2.borrow_mut();
+
+            sender.physical_state.to_audience_pushbutton_is_pressed = false;
+            sender.update();
+        })),
     );
 
-    let (state1, state2) = (Rc::clone(&state), Rc::clone(&state));
-    let jimmy_pedal = Button::new(
+    // Set up callbacks on press/release of the button serving as the pedal to band.
+    let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
+    let mut jimmy_pedal = Button::new(
         peripherals.pins.gpio19,
-        Box::new(move || {
+        Some(Box::new(move || {
             log::info!("jimmy_pedal PRESS");
-            state1.borrow_mut().to_band_pedal_is_pressed = true;
-            send_message(state1.borrow().to_message());
-        }),
-        Box::new(move || {
+
+            let mut sender = sender1.borrow_mut();
+
+            sender.physical_state.to_band_pedal_is_pressed = true;
+            sender.update();
+        })),
+        Some(Box::new(move || {
             log::info!("jimmy_pedal RELEASE");
-            state2.borrow_mut().to_band_pedal_is_pressed = false;
-            send_message(state2.borrow().to_message());
-        }),
+
+            let mut sender = sender2.borrow_mut();
+
+            sender.physical_state.to_band_pedal_is_pressed = false;
+            sender.update();
+        })),
     );
 
     // TODO: Move Mike operations to a separate binary.
-    let mike_state = Rc::new(RefCell::new(SimpleMicrophoneSenderState::default()));
+    // let mike_state = Rc::new(RefCell::new(SimpleMicrophoneSenderState::default()));
 
-    let (state1, state2) = (Rc::clone(&mike_state), Rc::clone(&mike_state));
-    let mike_pushbutton = Button::new(
-        peripherals.pins.gpio18,
-        Box::new(move || {
-            log::info!("mike_pushbutton PRESS");
-            state1.borrow_mut().to_audience_pushbutton_is_pressed = true;
-            send_message(state1.borrow().to_message());
-        }),
-        Box::new(move || {
-            log::info!("mike_pushbutton RELEASE");
-            state2.borrow_mut().to_audience_pushbutton_is_pressed = false;
-            send_message(state2.borrow().to_message());
-        }),
-    );
+    // let (state1, state2) = (Rc::clone(&mike_state), Rc::clone(&mike_state));
+    // let mike_pushbutton = Button::new(
+    //     peripherals.pins.gpio18,
+    //     Box::new(move || {
+    //         log::info!("mike_pushbutton PRESS");
+    //         state1.borrow_mut().to_audience_pushbutton_is_pressed = true;
+    //         send_message(state1.borrow().to_message());
+    //     }),
+    //     Box::new(move || {
+    //         log::info!("mike_pushbutton RELEASE");
+    //         state2.borrow_mut().to_audience_pushbutton_is_pressed = false;
+    //         send_message(state2.borrow().to_message());
+    //     }),
+    // );
 
     log::info!("SENDER JIMMY BEGIN");
 
     // Send a message to reset the microphone for Jimmy.
-    send_message(EspNowMessage::ResetMicrophone {
+    esp_now::send_message(EspNowMessage::ResetMicrophone {
         microphone_type: MicrophoneType::RoutableMicrophone,
     });
 
     // Send a message to reset the microphone for Mike.
-    send_message(EspNowMessage::ResetMicrophone {
-        microphone_type: MicrophoneType::SimpleMicrophone,
-    });
+    // send_message(EspNowMessage::ResetMicrophone {
+    //     microphone_type: MicrophoneType::SimpleMicrophone,
+    // });
 
     // 3. Initialize a single-threaded async executor.
     let executor: LocalExecutor = LocalExecutor::default();
@@ -152,41 +155,40 @@ fn main() {
     // Run all button async loops concurrently forever.
     edge_executor::block_on(executor.run(async {
         let _ = futures::join!(
-            Box::pin(monitor_button(jimmy_latch)),
-            Box::pin(monitor_button(jimmy_pushbutton)),
-            Box::pin(monitor_button(jimmy_pedal)),
-            Box::pin(monitor_button(mike_pushbutton)),
+            Box::pin(jimmy_latch.run()),
+            Box::pin(jimmy_pushbutton.run()),
+            Box::pin(jimmy_pedal.run()),
+            // Box::pin(monitor_button(mike_pushbutton)),
         );
     }));
 }
 
-/// Check a button forever, and call its callback functions when a button state change is detected.
-async fn monitor_button<'a>(mut button: Button<'a>) {
-    loop {
-        button.wait_and_update().await;
-    }
-}
+// async fn monitor_button<'a>(mut button: Button<'a>) {
+//     loop {
+//         button.wait_and_update().await;
+//     }
+// }
 
-/// Send a message over ESP-NOW.
-/// Note: I don't bother setting up a callback function to check if receiver sent back an ACK packet.
-fn send_message(message: EspNowMessage) {
-    log::info!("send_message: {:?}", message);
+// /// Send a message over ESP-NOW.
+// /// Note: I don't bother setting up a callback function to check if receiver sent back an ACK packet.
+// fn send_message(message: EspNowMessage) {
+//     log::info!("send_message: {:?}", message);
 
-    // ESP-NOW max payload size is 250 bytes.
-    let mut buffer = [0_u8; 250];
+//     // ESP-NOW max payload size is 250 bytes.
+//     let mut buffer = [0_u8; 250];
 
-    match postcard::to_slice(&message, &mut buffer) {
-        Err(err) => {
-            log::error!("postcard::to_slice failed: {}", err);
-        }
-        Ok(data) => {
-            let status = unsafe { esp_now_send(RECEIVER_MAC.as_ptr(), data.as_ptr(), data.len()) };
+//     match postcard::to_slice(&message, &mut buffer) {
+//         Err(err) => {
+//             log::error!("postcard::to_slice failed: {}", err);
+//         }
+//         Ok(data) => {
+//             let status = unsafe { esp_now_send(RECEIVER_MAC.as_ptr(), data.as_ptr(), data.len()) };
 
-            if status == ESP_OK {
-                log::info!("Successfully sent {} bytes of message", data.len());
-            } else {
-                log::error!("esp_now_send() failed: {:?}", status);
-            }
-        }
-    }
-}
+//             if status == ESP_OK {
+//                 log::info!("Successfully sent {} bytes of message", data.len());
+//             } else {
+//                 log::error!("esp_now_send() failed: {:?}", status);
+//             }
+//         }
+//     }
+// }
