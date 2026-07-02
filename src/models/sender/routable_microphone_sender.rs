@@ -28,6 +28,9 @@ impl<'a> MicrophoneSender for RoutableMicrophoneSender<'a> {
         // Turn off LEDs.
         self.hardware.initialize();
 
+        // Set up ESP-NOW.
+        esp_now::initialize_esp_now_as_sender();
+
         // Send a message telling the receiver to reset this microphone.
         esp_now::send_message(EspNowMessage::ResetMicrophone {
             microphone_type: MicrophoneType::RoutableMicrophone,
@@ -41,7 +44,7 @@ impl<'a> MicrophoneSender for RoutableMicrophoneSender<'a> {
         let logical_state = self.physical_state.to_logical_state();
 
         // 2. Use logical state to update hardware.
-        self.hardware.update(&logical_state);
+        self.hardware.flush(&logical_state);
 
         // 3. Use logical state to create message to send over ESP-NOW.
         esp_now::send_message(logical_state.to_message());
@@ -85,7 +88,7 @@ impl<'a> RoutableMicrophoneSenderHardware<'a> {
     }
 
     /// Update LEDs.
-    fn update(&mut self, logical_state: &RoutableMicrophoneLogicalState) {
+    fn flush(&mut self, logical_state: &RoutableMicrophoneLogicalState) {
         use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Muted};
 
         match logical_state {

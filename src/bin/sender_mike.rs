@@ -9,7 +9,6 @@ use std::{cell::RefCell, rc::Rc};
 
 use esp32_microphone_router::{
     button::Button,
-    esp_now,
     models::{MicrophoneSender, SimpleMicrophoneSender},
     power,
 };
@@ -41,8 +40,6 @@ fn main() {
         .expect("Failed to set wifi configuration in STA mode.");
 
     wifi.start().expect("Failed to start wifi.");
-
-    esp_now::initialize_esp_now_as_sender();
 
     // --------------------------------------------------------------------------------------------
 

@@ -27,6 +27,9 @@ impl<'a> MicrophoneSender for SimpleMicrophoneSender<'a> {
         // Turn off LEDs.
         self.hardware.initialize();
 
+        // Set up ESP-NOW.
+        esp_now::initialize_esp_now_as_sender();
+
         // Send a message telling the receiver to reset this microphone.
         esp_now::send_message(EspNowMessage::ResetMicrophone {
             microphone_type: MicrophoneType::SimpleMicrophone,
@@ -40,7 +43,7 @@ impl<'a> MicrophoneSender for SimpleMicrophoneSender<'a> {
         let logical_state = self.physical_state.to_logical_state();
 
         // 2. Use logical state to update hardware.
-        self.hardware.update(&logical_state);
+        self.hardware.flush(&logical_state);
 
         // 3. Use logical state to create message to send over ESP-NOW.
         esp_now::send_message(logical_state.to_message());
@@ -66,13 +69,13 @@ impl<'a> SimpleMicrophoneSenderHardware<'a> {
         }
     }
 
-    // Turn off LED.
+    /// Turn off LED.
     fn initialize(&mut self) {
         self.active_led.set_low().unwrap();
     }
 
-    // Update LED.
-    fn update(&mut self, logical_state: &SimpleMicrophoneLogicalState) {
+    /// Update LED.
+    fn flush(&mut self, logical_state: &SimpleMicrophoneLogicalState) {
         use SimpleMicrophoneLogicalState::{Active, Muted};
 
         match logical_state {
