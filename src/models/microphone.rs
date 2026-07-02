@@ -1,22 +1,43 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Debug)]
-pub struct RoutableMicrophone {
-    pub route: MicrophoneRoute,
-    pub active: bool,
-    pub last_message_id: u16,
+use crate::models::{EspNowMessage, ToMessage};
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub enum RoutableMicrophoneLogicalState {
+    #[default]
+    Muted,
+    ActiveToAudience,
+    ActiveToBand,
 }
 
-#[derive(Default, Debug)]
-pub struct SimpleMicrophone {
-    pub active: bool,
-    pub last_message_id: u16,
+impl ToMessage for RoutableMicrophoneLogicalState {
+    fn to_message(&self) -> EspNowMessage {
+        EspNowMessage::UpdateRoutableMicrophone {
+            state: *self,
+            message_id: EspNowMessage::generate_message_id(),
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+pub enum SimpleMicrophoneLogicalState {
+    #[default]
+    Muted,
+    Active,
+}
+
+impl ToMessage for SimpleMicrophoneLogicalState {
+    fn to_message(&self) -> EspNowMessage {
+        EspNowMessage::UpdateSimpleMicrophone {
+            state: *self,
+            message_id: EspNowMessage::generate_message_id(),
+        }
+    }
 }
 
 #[repr(u8)]
-#[derive(Default, Debug, Deserialize, Serialize)]
-pub enum MicrophoneRoute {
-    #[default]
-    ToAudience,
-    ToBand,
+#[derive(Debug, Deserialize, Serialize)]
+pub enum MicrophoneType {
+    RoutableMicrophone,
+    SimpleMicrophone,
 }

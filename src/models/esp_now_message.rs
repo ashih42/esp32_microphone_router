@@ -1,16 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU16, Ordering};
 
-use crate::models::MicrophoneRoute;
+use crate::models::{MicrophoneType, RoutableMicrophoneLogicalState, SimpleMicrophoneLogicalState};
 
 /// There are 3 types of messages:
 ///   - ResetMicrophone: Reset the receiver's `last_message_id` field for a specific microphone.
-///   - UpdateRoutableMicrophone: Update the state of the routable microphone (with `message_id`).
-///   - UpdateSimpleMicrophone: Update the state of the simple microphone (with `message_id`).
-///
-/// Note: I cannot serialize `EspNowMessage` to bytes using `serde` and `bincode`
-/// because `bincode` breaks the old nightly version of Rust Analyzer I need to use in this project with ESP32 Xtensa.
-/// Fortunately, I can use `postcard` instead of `bincode`.
+///   - UpdateRoutableMicrophone: Update the state of the routable microphone.
+///   - UpdateSimpleMicrophone: Update the state of the simple microphone.
 #[derive(Debug, Deserialize, Serialize)]
 pub enum EspNowMessage {
     ResetMicrophone {
@@ -18,20 +14,12 @@ pub enum EspNowMessage {
     },
     UpdateRoutableMicrophone {
         message_id: u16,
-        route: MicrophoneRoute,
-        active: bool,
+        state: RoutableMicrophoneLogicalState,
     },
     UpdateSimpleMicrophone {
         message_id: u16,
-        active: bool,
+        state: SimpleMicrophoneLogicalState,
     },
-}
-
-#[repr(u8)]
-#[derive(Debug, Deserialize, Serialize)]
-pub enum MicrophoneType {
-    RoutableMicrophone,
-    SimpleMicrophone,
 }
 
 pub trait ToMessage {

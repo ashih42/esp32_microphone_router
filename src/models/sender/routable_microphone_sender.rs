@@ -2,7 +2,9 @@ use esp_idf_hal::gpio::{Output, OutputPin, PinDriver};
 
 use crate::{
     esp_now,
-    models::{EspNowMessage, MicrophoneRoute, MicrophoneSender, MicrophoneType, ToMessage},
+    models::{
+        EspNowMessage, MicrophoneSender, MicrophoneType, RoutableMicrophoneLogicalState, ToMessage,
+    },
 };
 
 pub struct RoutableMicrophoneSender<'a> {
@@ -130,38 +132,6 @@ impl RoutableMicrophoneSenderPhysicalState {
     }
 }
 
-#[derive(Default, Debug, PartialEq, Eq)]
-pub enum RoutableMicrophoneLogicalState {
-    #[default]
-    Muted,
-    ActiveToAudience,
-    ActiveToBand,
-}
-
-impl ToMessage for RoutableMicrophoneLogicalState {
-    fn to_message(&self) -> EspNowMessage {
-        let message_id = EspNowMessage::generate_message_id();
-
-        match self {
-            Self::Muted => EspNowMessage::UpdateRoutableMicrophone {
-                active: false,
-                route: MicrophoneRoute::default(),
-                message_id,
-            },
-            Self::ActiveToAudience => EspNowMessage::UpdateRoutableMicrophone {
-                active: true,
-                route: MicrophoneRoute::ToAudience,
-                message_id,
-            },
-            Self::ActiveToBand => EspNowMessage::UpdateRoutableMicrophone {
-                active: true,
-                route: MicrophoneRoute::ToBand,
-                message_id,
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,34 +221,5 @@ mod tests {
 
             assert_eq!(state.to_logical_state(), ActiveToBand);
         }
-    }
-
-    /// Check all 3 possible logical states.
-    #[test]
-    fn test_logical_state_to_message() {
-        use RoutableMicrophoneLogicalState::{ActiveToAudience, ActiveToBand, Muted};
-
-        assert!(matches!(
-            Muted.to_message(),
-            EspNowMessage::UpdateRoutableMicrophone { active: false, .. }
-        ));
-
-        assert!(matches!(
-            ActiveToAudience.to_message(),
-            EspNowMessage::UpdateRoutableMicrophone {
-                active: true,
-                route: MicrophoneRoute::ToAudience,
-                ..
-            }
-        ));
-
-        assert!(matches!(
-            ActiveToBand.to_message(),
-            EspNowMessage::UpdateRoutableMicrophone {
-                active: true,
-                route: MicrophoneRoute::ToBand,
-                ..
-            }
-        ));
     }
 }

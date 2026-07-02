@@ -3,8 +3,7 @@ use esp_idf_hal::gpio::{Output, OutputPin, PinDriver};
 use crate::{
     esp_now,
     models::{
-        EspNowMessage, MicrophoneRoute, MicrophoneType,
-        microphone::{RoutableMicrophone, SimpleMicrophone},
+        EspNowMessage, MicrophoneType, RoutableMicrophoneLogicalState, SimpleMicrophoneLogicalState,
     },
 };
 
@@ -41,6 +40,7 @@ impl<'a> Receiver<'a> {
         // Set all relays to low.
         self.hardware.initialize();
 
+        // Set up ESP-NOW.
         esp_now::initialize_esp_now_as_receiver();
     }
 
@@ -55,8 +55,20 @@ impl<'a> Receiver<'a> {
 
 #[derive(Default, Debug)]
 struct ReceiverState {
-    routable_microphone: RoutableMicrophone,
-    simple_microphone: SimpleMicrophone,
+    routable_microphone: ReceiverRoutableMicrophone,
+    simple_microphone: ReceiverSimpleMicrophone,
+}
+
+#[derive(Default, Debug)]
+pub struct ReceiverRoutableMicrophone {
+    pub state: RoutableMicrophoneLogicalState,
+    pub last_message_id: u16,
+}
+
+#[derive(Default, Debug)]
+pub struct ReceiverSimpleMicrophone {
+    pub state: SimpleMicrophoneLogicalState,
+    pub last_message_id: u16,
 }
 
 impl ReceiverState {
@@ -65,15 +77,13 @@ impl ReceiverState {
 
         match message {
             EspNowMessage::ResetMicrophone { microphone_type } => {
-                self.reset_microphone(microphone_type)
+                self.reset_microphone(microphone_type);
             }
-            EspNowMessage::UpdateRoutableMicrophone {
-                message_id,
-                route,
-                active,
-            } => self.update_routable_microphone(message_id, route, active),
-            EspNowMessage::UpdateSimpleMicrophone { message_id, active } => {
-                self.update_simple_microphone(message_id, active)
+            EspNowMessage::UpdateRoutableMicrophone { message_id, state } => {
+                self.update_routable_microphone(message_id, state);
+            }
+            EspNowMessage::UpdateSimpleMicrophone { message_id, state } => {
+                self.update_simple_microphone(message_id, state);
             }
         };
     }
@@ -94,14 +104,12 @@ impl ReceiverState {
     fn update_routable_microphone(
         &mut self,
         message_id: u16,
-        route: MicrophoneRoute,
-        active: bool,
+        state: RoutableMicrophoneLogicalState,
     ) {
         let microphone = &mut self.routable_microphone;
 
         if message_id > microphone.last_message_id {
-            microphone.route = route;
-            microphone.active = active;
+            microphone.state = state;
             microphone.last_message_id = message_id;
             log::info!("Accepted this message.");
         } else {
@@ -110,11 +118,11 @@ impl ReceiverState {
     }
 
     /// If `message_id` is valid, update the state of the simple microphone.
-    fn update_simple_microphone(&mut self, message_id: u16, active: bool) {
+    fn update_simple_microphone(&mut self, message_id: u16, state: SimpleMicrophoneLogicalState) {
         let microphone = &mut self.simple_microphone;
 
         if message_id > microphone.last_message_id {
-            microphone.active = active;
+            microphone.state = state;
             microphone.last_message_id = message_id;
             log::info!("Accepted this message.");
         } else {
@@ -177,16 +185,11 @@ impl<'a> ReceiverHardware<'a> {
 
     /// Update the relays.
     fn flush(&mut self, state: &ReceiverState) {
-        // Mute or unmute the Routable Microphone.
-        if state.routable_microphone.active {
-            self.relay_muting_routable_microphone.set_high().unwrap();
-        } else {
-            self.relay_muting_routable_microphone.set_low().unwrap();
-        }
+        // Update the muting and routing relays of the Routable Microphone.
+        match state.routable_microphone.state {
+            RoutableMicrophoneLogicalState::ActiveToAudience => {
+                self.relay_muting_routable_microphone.set_high().unwrap();
 
-        // Change the routing of the Routable Microphone.
-        match state.routable_microphone.route {
-            MicrophoneRoute::ToAudience => {
                 self.relay_routing_routable_microphone_hot
                     .set_low()
                     .unwrap();
@@ -194,7 +197,9 @@ impl<'a> ReceiverHardware<'a> {
                     .set_low()
                     .unwrap();
             }
-            MicrophoneRoute::ToBand => {
+            RoutableMicrophoneLogicalState::ActiveToBand => {
+                self.relay_muting_routable_microphone.set_high().unwrap();
+
                 self.relay_routing_routable_microphone_hot
                     .set_high()
                     .unwrap();
@@ -202,13 +207,28 @@ impl<'a> ReceiverHardware<'a> {
                     .set_high()
                     .unwrap();
             }
+            RoutableMicrophoneLogicalState::Muted => {
+                self.relay_muting_routable_microphone.set_low().unwrap();
+
+                // Routing doesn't matter when the microphone is muted, but setting these relays to low
+                // reduces energy consumption.
+                self.relay_routing_routable_microphone_hot
+                    .set_low()
+                    .unwrap();
+                self.relay_routing_routable_microphone_cold
+                    .set_low()
+                    .unwrap();
+            }
         }
 
-        // Mute or unmute the Simple Microphone.
-        if state.simple_microphone.active {
-            self.relay_muting_simple_microphone.set_high().unwrap();
-        } else {
-            self.relay_muting_simple_microphone.set_low().unwrap();
+        // Update the muting relay of the Simple Microphone.
+        match state.simple_microphone.state {
+            SimpleMicrophoneLogicalState::Active => {
+                self.relay_muting_simple_microphone.set_high().unwrap();
+            }
+            SimpleMicrophoneLogicalState::Muted => {
+                self.relay_muting_simple_microphone.set_low().unwrap();
+            }
         }
     }
 }

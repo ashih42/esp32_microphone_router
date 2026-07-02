@@ -2,7 +2,9 @@ use esp_idf_hal::gpio::{Output, OutputPin, PinDriver};
 
 use crate::{
     esp_now,
-    models::{EspNowMessage, MicrophoneSender, MicrophoneType, ToMessage},
+    models::{
+        EspNowMessage, MicrophoneSender, MicrophoneType, SimpleMicrophoneLogicalState, ToMessage,
+    },
 };
 
 pub struct SimpleMicrophoneSender<'a> {
@@ -101,30 +103,6 @@ impl SimpleMicrophoneSenderPhysicalState {
     }
 }
 
-#[derive(Default, Debug, PartialEq, Eq)]
-pub enum SimpleMicrophoneLogicalState {
-    #[default]
-    Muted,
-    Active,
-}
-
-impl ToMessage for SimpleMicrophoneLogicalState {
-    fn to_message(&self) -> EspNowMessage {
-        let message_id = EspNowMessage::generate_message_id();
-
-        match self {
-            Self::Muted => EspNowMessage::UpdateSimpleMicrophone {
-                active: false,
-                message_id,
-            },
-            Self::Active => EspNowMessage::UpdateSimpleMicrophone {
-                active: true,
-                message_id,
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,21 +128,5 @@ mod tests {
 
             assert_eq!(state.to_logical_state(), Active);
         }
-    }
-
-    /// Check all 2 possible logical states.
-    #[test]
-    fn test_logical_state_to_message() {
-        use SimpleMicrophoneLogicalState::{Active, Muted};
-
-        assert!(matches!(
-            Muted.to_message(),
-            EspNowMessage::UpdateSimpleMicrophone { active: false, .. }
-        ));
-
-        assert!(matches!(
-            Active.to_message(),
-            EspNowMessage::UpdateSimpleMicrophone { active: true, .. }
-        ));
     }
 }
