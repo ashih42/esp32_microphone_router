@@ -1,3 +1,5 @@
+// Jimmy is the user who is sending messages to update the Routable Microphone.
+
 use edge_executor::LocalExecutor;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::{
@@ -51,7 +53,7 @@ fn main() {
 
     sender.borrow_mut().initialize();
 
-    // Set up callbacks on press/release of the button serving as the latch to audience.
+    // Set up callback on press of the button serving as the latch to audience.
     let sender1 = Rc::clone(&sender);
     let mut to_audience_latch = Button::new(
         peripherals.pins.gpio22,
@@ -61,13 +63,13 @@ fn main() {
 
             let mut sender = sender1.borrow_mut();
 
-            sender.physical_state.flip_to_audience_latch();
+            sender.input.flip_to_audience_latch();
             sender.update();
         })),
         None,
     );
 
-    // Set up callbacks on press/release of the button serving as the button to audience.
+    // Set up callbacks on press/release of the button serving as the pushbutton to audience.
     let (sender1, sender2) = (Rc::clone(&sender), Rc::clone(&sender));
     let mut to_audience_pushbutton = Button::new(
         peripherals.pins.gpio21,
@@ -77,7 +79,7 @@ fn main() {
 
             let mut sender = sender1.borrow_mut();
 
-            sender.physical_state.to_audience_pushbutton_is_pressed = true;
+            sender.input.to_audience_pushbutton_is_pressed = true;
             sender.update();
         })),
         Some(Box::new(move || {
@@ -85,7 +87,7 @@ fn main() {
 
             let mut sender = sender2.borrow_mut();
 
-            sender.physical_state.to_audience_pushbutton_is_pressed = false;
+            sender.input.to_audience_pushbutton_is_pressed = false;
             sender.update();
         })),
     );
@@ -100,7 +102,7 @@ fn main() {
 
             let mut sender = sender1.borrow_mut();
 
-            sender.physical_state.to_band_pedal_is_pressed = true;
+            sender.input.to_band_pedal_is_pressed = true;
             sender.update();
         })),
         Some(Box::new(move || {
@@ -108,7 +110,7 @@ fn main() {
 
             let mut sender = sender2.borrow_mut();
 
-            sender.physical_state.to_band_pedal_is_pressed = false;
+            sender.input.to_band_pedal_is_pressed = false;
             sender.update();
         })),
     );
@@ -118,7 +120,7 @@ fn main() {
     // 3. Initialize a single-threaded async executor.
     let executor: LocalExecutor = LocalExecutor::default();
 
-    // Run all button async loops concurrently forever.
+    // Run all buttons concurrently forever.
     edge_executor::block_on(executor.run(async {
         let _ = futures::join!(
             Box::pin(to_audience_latch.run()),

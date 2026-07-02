@@ -1,3 +1,5 @@
+// Mike is the user who is sending messages to update the Simple Microphone.
+
 use edge_executor::LocalExecutor;
 use esp_idf_hal::peripherals::Peripherals;
 use esp_idf_svc::{
@@ -56,19 +58,19 @@ fn main() {
         peripherals.pins.gpio22,
         false,
         Some(Box::new(move || {
-            log::info!("mike_pushbutton PRESS");
+            log::info!("active_pushbutton PRESS");
 
             let mut sender = sender1.borrow_mut();
 
-            sender.physical_state.active_pushbutton_is_pressed = true;
+            sender.input.active_pushbutton_is_pressed = true;
             sender.update();
         })),
         Some(Box::new(move || {
-            log::info!("mike_pushbutton RELEASE");
+            log::info!("active_pushbutton RELEASE");
 
             let mut sender = sender2.borrow_mut();
 
-            sender.physical_state.active_pushbutton_is_pressed = false;
+            sender.input.active_pushbutton_is_pressed = false;
             sender.update();
         })),
     );
@@ -78,7 +80,7 @@ fn main() {
     // 3. Initialize a single-threaded async executor.
     let executor: LocalExecutor = LocalExecutor::default();
 
-    // Run all button async loops concurrently forever.
+    // Run all (one) button concurrently forever.
     edge_executor::block_on(executor.run(async {
         let _ = futures::join!(Box::pin(active_pushbutton.run()));
     }));

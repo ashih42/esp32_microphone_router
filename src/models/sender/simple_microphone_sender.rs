@@ -2,13 +2,11 @@ use esp_idf_hal::gpio::{Output, OutputPin, PinDriver};
 
 use crate::{
     esp_now,
-    models::{
-        EspNowMessage, MicrophoneSender, MicrophoneType, SimpleMicrophoneLogicalState, ToMessage,
-    },
+    models::{EspNowMessage, MicrophoneSender, MicrophoneType, SimpleMicrophoneState, ToMessage},
 };
 
 pub struct SimpleMicrophoneSender<'a> {
-    pub physical_state: SimpleMicrophoneSenderPhysicalState,
+    pub input: SimpleMicrophoneSenderInput,
     hardware: SimpleMicrophoneSenderHardware<'a>,
 }
 
@@ -18,7 +16,7 @@ impl<'a> SimpleMicrophoneSender<'a> {
         T: OutputPin + 'a,
     {
         Self {
-            physical_state: SimpleMicrophoneSenderPhysicalState::default(),
+            input: SimpleMicrophoneSenderInput::default(),
             hardware: SimpleMicrophoneSenderHardware::new(active_led_pin),
         }
     }
@@ -38,22 +36,22 @@ impl<'a> MicrophoneSender for SimpleMicrophoneSender<'a> {
         });
     }
 
-    /// Whenever after `physical_state` was updated by button press/release events, call this function to
+    /// Whenever after `input` was updated by button press/release events, call this function to
     /// propagate the effects to other parts of the system.
     fn update(&mut self) {
-        // 1. Generate logical state from physical state.
-        let logical_state = self.physical_state.to_logical_state();
+        // 1. Generate state from input.
+        let state = self.input.to_state();
 
-        // 2. Use logical state to update hardware.
-        self.hardware.flush(&logical_state);
+        // 2. Use state to update hardware.
+        self.hardware.flush(&state);
 
-        // 3. Use logical state to create message to send over ESP-NOW.
-        esp_now::send_message(logical_state.to_message());
+        // 3. Use state to create a message to send over ESP-NOW.
+        esp_now::send_message(state.to_message());
     }
 }
 
 #[derive(Default, Debug)]
-pub struct SimpleMicrophoneSenderPhysicalState {
+pub struct SimpleMicrophoneSenderInput {
     pub active_pushbutton_is_pressed: bool,
 }
 
@@ -77,10 +75,10 @@ impl<'a> SimpleMicrophoneSenderHardware<'a> {
     }
 
     /// Update LED.
-    fn flush(&mut self, logical_state: &SimpleMicrophoneLogicalState) {
-        use SimpleMicrophoneLogicalState::{Active, Muted};
+    fn flush(&mut self, state: &SimpleMicrophoneState) {
+        use SimpleMicrophoneState::{Active, Muted};
 
-        match logical_state {
+        match state {
             Muted => {
                 self.active_led.set_low().unwrap();
             }
@@ -91,10 +89,10 @@ impl<'a> SimpleMicrophoneSenderHardware<'a> {
     }
 }
 
-impl SimpleMicrophoneSenderPhysicalState {
+impl SimpleMicrophoneSenderInput {
     /// Reference: https://docs.google.com/spreadsheets/d/1QiK6jzAJQySYgz_KvizED40fUrpU3yX_CyY_O5MObKY/edit?gid=0#gid=0
-    pub fn to_logical_state(&self) -> SimpleMicrophoneLogicalState {
-        use SimpleMicrophoneLogicalState::{Active, Muted};
+    pub fn to_state(&self) -> SimpleMicrophoneState {
+        use SimpleMicrophoneState::{Active, Muted};
 
         match self.active_pushbutton_is_pressed {
             false => Muted,
@@ -107,26 +105,26 @@ impl SimpleMicrophoneSenderPhysicalState {
 mod tests {
     use super::*;
 
-    /// Check all 2 possible physical states.
+    /// Check all 2 possible input values.
     /// Reference: https://docs.google.com/spreadsheets/d/1QiK6jzAJQySYgz_KvizED40fUrpU3yX_CyY_O5MObKY/edit?gid=0#gid=0
     #[test]
-    fn test_physical_state_to_logical_state() {
-        use SimpleMicrophoneLogicalState::{Active, Muted};
+    fn test_input_to_state() {
+        use SimpleMicrophoneState::{Active, Muted};
 
         {
-            let state = SimpleMicrophoneSenderPhysicalState {
+            let input = SimpleMicrophoneSenderInput {
                 active_pushbutton_is_pressed: false,
             };
 
-            assert_eq!(state.to_logical_state(), Muted);
+            assert_eq!(input.to_state(), Muted);
         }
 
         {
-            let state = SimpleMicrophoneSenderPhysicalState {
+            let input = SimpleMicrophoneSenderInput {
                 active_pushbutton_is_pressed: true,
             };
 
-            assert_eq!(state.to_logical_state(), Active);
+            assert_eq!(input.to_state(), Active);
         }
     }
 }

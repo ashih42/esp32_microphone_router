@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 use crate::models::{EspNowMessage, ToMessage};
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub enum RoutableMicrophoneLogicalState {
+pub enum RoutableMicrophoneState {
     #[default]
     Muted,
     ActiveToAudience,
     ActiveToBand,
 }
 
-impl ToMessage for RoutableMicrophoneLogicalState {
+impl ToMessage for RoutableMicrophoneState {
     fn to_message(&self) -> EspNowMessage {
         EspNowMessage::UpdateRoutableMicrophone {
             state: *self,
@@ -20,13 +20,13 @@ impl ToMessage for RoutableMicrophoneLogicalState {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub enum SimpleMicrophoneLogicalState {
+pub enum SimpleMicrophoneState {
     #[default]
     Muted,
     Active,
 }
 
-impl ToMessage for SimpleMicrophoneLogicalState {
+impl ToMessage for SimpleMicrophoneState {
     fn to_message(&self) -> EspNowMessage {
         EspNowMessage::UpdateSimpleMicrophone {
             state: *self,

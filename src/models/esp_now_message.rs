@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU16, Ordering};
 
-use crate::models::{MicrophoneType, RoutableMicrophoneLogicalState, SimpleMicrophoneLogicalState};
+use crate::models::{MicrophoneType, RoutableMicrophoneState, SimpleMicrophoneState};
 
 /// There are 3 types of messages:
 ///   - ResetMicrophone: Reset the receiver's `last_message_id` field for a specific microphone.
@@ -14,11 +14,11 @@ pub enum EspNowMessage {
     },
     UpdateRoutableMicrophone {
         message_id: u16,
-        state: RoutableMicrophoneLogicalState,
+        state: RoutableMicrophoneState,
     },
     UpdateSimpleMicrophone {
         message_id: u16,
-        state: SimpleMicrophoneLogicalState,
+        state: SimpleMicrophoneState,
     },
 }
 
